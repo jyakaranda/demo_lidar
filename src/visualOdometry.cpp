@@ -77,6 +77,7 @@ ros::Publisher *imageShowPubPointer;
 
 const int showDSRate = 2;
 
+// o = c*l
 void accumulateRotation(double cx, double cy, double cz, double lx, double ly, double lz, 
                         double &ox, double &oy, double &oz)
 {
@@ -96,6 +97,8 @@ void accumulateRotation(double cx, double cy, double cz, double lx, double ly, d
   oz = atan2(srzcrx / cos(ox), crzcrx / cos(ox));
 }
 
+// o^-1 = c^-1 * l
+// 真是无语了，就不能搞成 o = l^-1 * s 么，逻辑真的奇怪，就是个差分获取当前 img 到当前 imu 的 diff
 void diffRotation(double cx, double cy, double cz, double lx, double ly, double lz, 
                   double &ox, double &oy, double &oz)
 {
@@ -127,6 +130,7 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
   imuYawLast = imuYawCur;
 
   double transform[6] = {0};
+  // 差分获取当前 imu 位姿
   if (imuPointerLast >= 0) {
     while (imuPointerFront != imuPointerLast) {
       if (imagePointsCurTime < imuTime[imuPointerFront]) {
@@ -187,7 +191,9 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
   ipDepthCur = ipDepthTemp;
 
   int j = 0;
+  // 归一化平面坐标
   pcl::PointXYZI ips;
+  // 图像坐标，r 表示 relation
   pcl::PointXYZHSV ipr;
   ipRelations->clear();
   ipInd.clear();
@@ -197,6 +203,7 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
       if (imagePointsCur->points[j].ind == imagePointsLast->points[i].ind) {
         ipFound = true;
       }
+      // 注意 imgpointlast 
       if (imagePointsCur->points[j].ind >= imagePointsLast->points[i].ind) {
         break;
       }
@@ -218,6 +225,7 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
         double minDepth, maxDepth;
         if (pointSearchSqrDis[0] < 0.5 && pointSearchInd.size() == 3) {
           pcl::PointXYZI depthPoint = depthCloud->points[pointSearchInd[0]];
+          // depthpoint 的原始坐标
           double x1 = depthPoint.x * depthPoint.intensity / 10;
           double y1 = depthPoint.y * depthPoint.intensity / 10;
           double z1 = depthPoint.intensity;
@@ -240,6 +248,7 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
 
           double u = ipr.x;
           double v = ipr.y;
+          // 计算三点平面与 ipr 射线的交点的 depth
           ipr.s = (x1*y2*z3 - x1*y3*z2 - x2*y1*z3 + x2*y3*z1 + x3*y1*z2 - x3*y2*z1) 
                 / (x1*y2 - x2*y1 - x1*y3 + x3*y1 + x2*y3 - x3*y2 + u*y1*z2 - u*y2*z1
                 - v*x1*z2 + v*x2*z1 - u*y1*z3 + u*y3*z1 + v*x1*z3 - v*x3*z1 + u*y2*z3 
@@ -263,6 +272,7 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
         ipr.v = 0;
       }
 
+      // 没有 depth 的点
       if (fabs(ipr.v) < 0.5) {
         double disX = transformSum[3] - startTransLast->points[i].h;
         double disY = transformSum[4] - startTransLast->points[i].s;
@@ -357,9 +367,15 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
         }
       }
 
+      // ipr.v == 0 也 push 了，代表该点没有深度
       ipRelations->push_back(ipr);
       ipInd.push_back(imagePointsLast->points[i].ind);
     }
+    /*
+    else {
+      break;
+    }
+    */
   }
 
   int iterNum = 100;
@@ -395,6 +411,7 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
 
       if (fabs(ipr.v) < 0.5) {
 
+        // 应该是计算梯度相关的，还没推
         ipr2.x = v0*(crz*srx*(tx - tz*u1) - crx*(ty*u1 - tx*v1) + srz*srx*(ty - tz*v1)) 
                - u0*(sry*srx*(ty*u1 - tx*v1) + crz*sry*crx*(tx - tz*u1) + sry*srz*crx*(ty - tz*v1)) 
                + cry*srx*(ty*u1 - tx*v1) + cry*crz*crx*(tx - tz*u1) + cry*srz*crx*(ty - tz*v1);
@@ -416,6 +433,7 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
         ipr2.v = u1*(sry*srz - cry*crz*srx) - v1*(crz*sry + cry*srx*srz) + u0*(u1*(cry*srz + crz*srx*sry) 
                - v1*(cry*crz - srx*sry*srz)) + v0*(crx*crz*u1 + crx*srz*v1);
 
+        // 公式5 residuals，这个顺序也是够奇怪的
         double y2 = (ty - tz*v1)*(crz*sry + cry*srx*srz) - (tx - tz*u1)*(sry*srz - cry*crz*srx) 
                   - v0*(srx*(ty*u1 - tx*v1) + crx*crz*(tx - tz*u1) + crx*srz*(ty - tz*v1)) 
                   + u0*((ty - tz*v1)*(cry*crz - srx*sry*srz) - (tx - tz*u1)*(cry*srz + crz*srx*sry) 
@@ -553,9 +571,11 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
   }
 
   double rx, ry, rz;
+  // TODO: -transform 为上一帧到当前帧的转换，为什么加负号要确认一下
   accumulateRotation(transformSum[0], transformSum[1], transformSum[2], 
                     -transform[0], -transform[1], -transform[2], rx, ry, rz);
 
+  // 差分当前 img 到当前 imu 的 diff
   if (imuPointerLast >= 0) {
     double drx, dry, drz;
     diffRotation(imuPitchCur, imuYawCur - imuYawInit, imuRollCur, rx, ry, rz, drx, dry, drz);
@@ -641,6 +661,7 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
       }
     } else {
       startPointsCur->push_back(imagePointsCur->points[i]);
+      // TODO: 为什么要放这么多重复的 spc
       startTransCur->push_back(spc);
       ipDepthCur->push_back(-1);
     }
@@ -762,6 +783,7 @@ void depthCloudHandler(const sensor_msgs::PointCloud2ConstPtr& depthCloud2)
 
   if (depthCloudNum > 10) {
     for (int i = 0; i < depthCloudNum; i++) {
+      // 转到 z = 10 的归一化平面上
       depthCloud->points[i].intensity = depthCloud->points[i].z;
       depthCloud->points[i].x *= 10 / depthCloud->points[i].z;
       depthCloud->points[i].y *= 10 / depthCloud->points[i].z;

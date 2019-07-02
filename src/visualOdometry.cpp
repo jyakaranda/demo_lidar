@@ -278,6 +278,7 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
         double disY = transformSum[4] - startTransLast->points[i].s;
         double disZ = transformSum[5] - startTransLast->points[i].v;
 
+        // TODO: 三角化计算深度，还没推公式
         if (sqrt(disX * disX + disY * disY + disZ * disZ) > 1) {
 
           double u0 = startPointsLast->points[i].u;
@@ -411,7 +412,7 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
 
       if (fabs(ipr.v) < 0.5) {
 
-        // 应该是计算梯度相关的，还没推
+        // 梯度，顺序和符号有点乱
         ipr2.x = v0*(crz*srx*(tx - tz*u1) - crx*(ty*u1 - tx*v1) + srz*srx*(ty - tz*v1)) 
                - u0*(sry*srx*(ty*u1 - tx*v1) + crz*sry*crx*(tx - tz*u1) + sry*srz*crx*(ty - tz*v1)) 
                + cry*srx*(ty*u1 - tx*v1) + cry*crz*crx*(tx - tz*u1) + cry*srz*crx*(ty - tz*v1);
@@ -433,7 +434,7 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
         ipr2.v = u1*(sry*srz - cry*crz*srx) - v1*(crz*sry + cry*srx*srz) + u0*(u1*(cry*srz + crz*srx*sry) 
                - v1*(cry*crz - srx*sry*srz)) + v0*(crx*crz*u1 + crx*srz*v1);
 
-        // 公式5 residuals，这个顺序也是够奇怪的
+        // 公式6 residuals，这个顺序也是够奇怪的
         double y2 = (ty - tz*v1)*(crz*sry + cry*srx*srz) - (tx - tz*u1)*(sry*srz - cry*crz*srx) 
                   - v0*(srx*(ty*u1 - tx*v1) + crx*crz*(tx - tz*u1) + crx*srz*(ty - tz*v1)) 
                   + u0*((ty - tz*v1)*(cry*crz - srx*sry*srz) - (tx - tz*u1)*(cry*srz + crz*srx*sry) 
@@ -473,6 +474,7 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
 
         ipr3.v = -u1;
 
+        // 公式 3
         double y3 = tx - tz*u1 + d0*(crz*sry - crx*cry*u1 + cry*srx*srz) - d0*v0*(crx*srz + srx*u1) 
                   + d0*u0*(cry*crz + crx*sry*u1 - srx*sry*srz);
 
@@ -489,6 +491,7 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
 
         ipr4.v = -v1;
 
+        // 公式 4
         double y4 = ty - tz*v1 - d0*(cry*crz*srx - sry*srz + crx*cry*v1) + d0*v0*(crx*crz - srx*v1) 
                   + d0*u0*(cry*srz + crz*srx*sry + crx*sry*v1);
 
@@ -570,8 +573,9 @@ void imagePointsHandler(const sensor_msgs::PointCloud2ConstPtr& imagePoints2)
     imuInited = true;
   }
 
+  // updateTransform
   double rx, ry, rz;
-  // TODO: -transform 为上一帧到当前帧的转换，为什么加负号要确认一下
+  // -transform 为上一帧到当前帧的转换
   accumulateRotation(transformSum[0], transformSum[1], transformSum[2], 
                     -transform[0], -transform[1], -transform[2], rx, ry, rz);
 
